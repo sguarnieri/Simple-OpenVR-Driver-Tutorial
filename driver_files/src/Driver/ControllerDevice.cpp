@@ -30,6 +30,11 @@ void ExampleDriver::ControllerDevice::Update()
         //}
     }
 
+    if (GetAsyncKeyState(0x43 /* VK_C */) != 0) {
+        this->did_vibrate_ = true;
+        vr::VRDriverLog()->Log("Controller VK_C pressed");
+    }
+
     // Check if we need to keep vibrating
     if (this->did_vibrate_) {
         this->vibrate_anim_state_ += (GetDriver()->GetLastFrameTime().count()/1000.f);
@@ -54,10 +59,13 @@ void ExampleDriver::ControllerDevice::Update()
         linalg::vec<float, 4> hmd_rotation{ (float)hmd_pose.qRotation.x, (float)hmd_pose.qRotation.y, (float)hmd_pose.qRotation.z, (float)hmd_pose.qRotation.w };
 
         // Do shaking animation if haptic vibration was requested
-        float controller_y = -0.2f + 0.01f * std::sinf(8 * 3.1415f * vibrate_anim_state_);
+        float h_sign = this->handedness_ == Handedness::LEFT ? 1.0f : (this->handedness_ == Handedness::RIGHT ? -1.0f : 0.5f);
+        float shake_rads = h_sign * 8 * 3.1415f * vibrate_anim_state_;
+        float controller_y = -0.2f + 0.01f * std::sinf(shake_rads);
 
         // Left hand controller on the left, right hand controller on the right, any other handedness sticks to the middle
         float controller_x = this->handedness_ == Handedness::LEFT ? -0.2f : (this->handedness_ == Handedness::RIGHT ? 0.2f : 0.f);
+        controller_x += 0.01f * std::cosf(shake_rads);
 
         linalg::vec<float, 3> hmd_pose_offset = { controller_x, controller_y, -0.5f };
 
@@ -77,7 +85,7 @@ void ExampleDriver::ControllerDevice::Update()
 
     // Check if we need to press any buttons (I am only hooking up the A button here but the process is the same for the others)
     // You will still need to go into the games button bindings and hook up each one (ie. a to left click, b to right click, etc.) for them to work properly
-    if (GetAsyncKeyState(0x45 /* E */) != 0) {
+    if (GetAsyncKeyState(0x45 /* VK_E */) != 0) {
         GetDriver()->GetInput()->UpdateBooleanComponent(this->a_button_click_component_, true, 0);
         GetDriver()->GetInput()->UpdateBooleanComponent(this->a_button_touch_component_, true, 0);
     }

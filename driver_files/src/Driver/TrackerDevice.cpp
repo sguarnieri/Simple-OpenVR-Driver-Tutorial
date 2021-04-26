@@ -16,6 +16,9 @@ void ExampleDriver::TrackerDevice::Update()
     if (this->device_index_ == vr::k_unTrackedDeviceIndexInvalid)
         return;
 
+    static int call_count = -1;
+    ++call_count;
+
     // Check if this device was asked to be identified
     auto events = GetDriver()->GetOpenVREvents();
     for (auto event : events) {
@@ -29,6 +32,10 @@ void ExampleDriver::TrackerDevice::Update()
         //}
     }
 
+    if (GetAsyncKeyState(0x42 /* VK_B */) != 0) {
+        this->did_vibrate_ = true;
+        vr::VRDriverLog()->Log("Tracker VK_B pressed");
+    }
     // Check if we need to keep vibrating
     if (this->did_vibrate_) {
         this->vibrate_anim_state_ += (GetDriver()->GetLastFrameTime().count()/1000.f);
@@ -44,32 +51,48 @@ void ExampleDriver::TrackerDevice::Update()
     // Find a HMD
     auto devices = GetDriver()->GetDevices();
     auto hmd = std::find_if(devices.begin(), devices.end(), [](const std::shared_ptr<IVRDevice>& device_ptr) {return device_ptr->GetDeviceType() == DeviceType::HMD; });
+    vr::DriverPose_t hmd_pose = this->last_pose_;
     if (hmd != devices.end()) {
         // Found a HMD
-        vr::DriverPose_t hmd_pose = (*hmd)->GetPose();
-
-        // Here we setup some transforms so our controllers are offset from the headset by a small amount so we can see them
-        linalg::vec<float, 3> hmd_position{ (float)hmd_pose.vecPosition[0], (float)hmd_pose.vecPosition[1], (float)hmd_pose.vecPosition[2] };
-        linalg::vec<float, 4> hmd_rotation{ (float)hmd_pose.qRotation.x, (float)hmd_pose.qRotation.y, (float)hmd_pose.qRotation.z, (float)hmd_pose.qRotation.w };
-
-        // Do shaking animation if haptic vibration was requested
-        float controller_y = -0.35f + 0.01f * std::sinf(8 * 3.1415f * vibrate_anim_state_);
-
-        linalg::vec<float, 3> hmd_pose_offset = { 0.f, controller_y, -0.5f };
-
-        hmd_pose_offset = linalg::qrot(hmd_rotation, hmd_pose_offset);
-
-        linalg::vec<float, 3> final_pose = hmd_pose_offset + hmd_position;
-
-        pose.vecPosition[0] = final_pose.x;
-        pose.vecPosition[1] = final_pose.y;
-        pose.vecPosition[2] = final_pose.z;
-
-        pose.qRotation.w = hmd_rotation.w;
-        pose.qRotation.x = hmd_rotation.x;
-        pose.qRotation.y = hmd_rotation.y;
-        pose.qRotation.z = hmd_rotation.z;
+        hmd_pose = (*hmd)->GetPose();
     }
+
+    if (call_count == 0) {
+        if (hmd != devices.end())
+            vr::VRDriverLog()->Log("Tracker using found HMD Device pose");
+        else
+            vr::VRDriverLog()->Log("Tracker using internal pose only");
+    }
+
+
+    // Here we setup some transforms so our controllers are offset from the headset by a small amount so we can see them
+    linalg::vec<float, 3> hmd_position{ (float)hmd_pose.vecPosition[0], (float)hmd_pose.vecPosition[1], (float)hmd_pose.vecPosition[2] };
+    linalg::vec<float, 4> hmd_rotation{ (float)hmd_pose.qRotation.x, (float)hmd_pose.qRotation.y, (float)hmd_pose.qRotation.z, (float)hmd_pose.qRotation.w };
+
+    // Do shaking animation if haptic vibration was requested
+    float h_sign = 0.5f;
+    float shake_rads = h_sign * 8 * 3.1415f * vibrate_anim_state_;
+    float controller_y = -0.35f + 0.01f * std::sinf(shake_rads);
+
+    float controller_x = 0.0f;
+    controller_x += 0.01f * std::cosf(shake_rads);
+
+    linalg::vec<float, 3> hmd_pose_offset = { controller_x, controller_y, -0.5f };
+
+    hmd_pose_offset = linalg::qrot(hmd_rotation, hmd_pose_offset);
+
+    linalg::vec<float, 3> final_pose = hmd_pose_offset + hmd_position;
+
+    pose.vecPosition[0] = final_pose.x;
+    pose.vecPosition[1] = final_pose.y;
+    pose.vecPosition[2] = final_pose.z;
+
+    pose.qRotation.w = hmd_rotation.w;
+    pose.qRotation.x = hmd_rotation.x;
+    pose.qRotation.y = hmd_rotation.y;
+    pose.qRotation.z = hmd_rotation.z;
+
+
 
     // Post pose
     GetDriver()->GetDriverHost()->TrackedDevicePoseUpdated(this->device_index_, pose, sizeof(vr::DriverPose_t));
